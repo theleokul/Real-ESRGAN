@@ -1,14 +1,20 @@
+import os.path as osp
+
 import numpy as np
 import random
 import torch
+from tqdm import tqdm
+from basicsr.utils import imwrite, tensor2img
 from basicsr.data.degradations import random_add_gaussian_noise_pt, random_add_poisson_noise_pt
 from basicsr.data.transforms import paired_random_crop
 from basicsr.models.srgan_model import SRGANModel
 from basicsr.utils import DiffJPEG, USMSharp
 from basicsr.utils.img_process_util import filter2D
 from basicsr.utils.registry import MODEL_REGISTRY
+from basicsr.metrics import calculate_metric
 from collections import OrderedDict
 from torch.nn import functional as F
+from cleanfid import fid
 
 
 @MODEL_REGISTRY.register()
@@ -171,7 +177,63 @@ class RealESRGANModel(SRGANModel):
     def nondist_validation(self, dataloader, current_iter, tb_logger, save_img):
         # do not use the synthetic process during validation
         self.is_train = False
-        super(RealESRGANModel, self).nondist_validation(dataloader, current_iter, tb_logger, save_img)
+
+        dataset_name = dataloader.dataset.opt['name']
+        with_metrics = self.opt['val'].get('metrics') is not None
+        if with_metrics:
+            self.metric_results = {metric: 0 for metric in self.opt['val']['metrics'].keys()}
+        pbar = tqdm(total=len(dataloader), unit='image')
+
+        for idx, val_data in enumerate(dataloader):
+            img_name = osp.splitext(osp.basename(val_data['lq_path'][0]))[0]
+            self.feed_data(val_data)
+            self.test()
+
+            visuals = self.get_current_visuals()
+            sr_img = tensor2img([visuals['result']])
+            if 'gt' in visuals:
+                gt_img = tensor2img([visuals['gt']])
+                del self.gt
+
+            # tentative for out of GPU memory
+            del self.lq
+            del self.output
+            torch.cuda.empty_cache()
+
+            if save_img:
+                if self.opt['is_train']:
+                    save_img_path = osp.join(self.opt['path']['visualization'], img_name,
+                                             f'{img_name}_{current_iter}.png')
+                else:
+                    if self.opt['val']['suffix']:
+                        save_img_path = osp.join(self.opt['path']['visualization'], dataset_name,
+                                                 f'{img_name}_{self.opt["val"]["suffix"]}.png')
+                    else:
+                        save_img_path = osp.join(self.opt['path']['visualization'], dataset_name,
+                                                 f'{img_name}_{self.opt["name"]}.png')
+                imwrite(sr_img, save_img_path)
+
+            if with_metrics:
+                # calculate metrics
+                for name, opt_ in self.opt['val']['metrics'].items():
+                    metric_data = dict(img1=sr_img, img2=gt_img)
+                    self.metric_results[name] += calculate_metric(metric_data, opt_)
+            pbar.update(1)
+            pbar.set_description(f'Test {img_name}')
+        pbar.close()
+
+        if with_metrics:
+            for metric in self.metric_results.keys():
+                self.metric_results[metric] /= (idx + 1)
+
+            # Calculate FID score
+            val_folder = osp.join(self.opt['path']['visualization'], dataset_name)
+            val_pred_folder = osp.join(self.opt['path']['visualization'], dataset_name)
+            fid_score = fid.compute_fid(val_pred_folder, val_folder)
+            self.metric_results['fid_score'] = fid_score
+
+            self._log_validation_metric_values(current_iter, dataset_name, tb_logger)
+
         self.is_train = True
 
     def optimize_parameters(self, current_iter):
