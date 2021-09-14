@@ -31,14 +31,14 @@ gray_noise_prob2: 0.4
 jpeg_range2: [30, 95]
 
 gt_size: 256
-queue_size: 180
+queue_size: 128
 
 # dataset and data loader settings
 datasets:
   train:
     name: FFHQHumanCuts
     type: RealESRGANDataset
-    dataroot_gt: FFHQ_wild_human_cuts/train
+    dataroot_gt: FFHQ_wild_human_cuts
     meta_info: train_meta_info.txt
     io_backend:
       type: disk
@@ -67,19 +67,19 @@ datasets:
 
     # data loader
     use_shuffle: true
-    num_worker_per_gpu: 5
-    batch_size_per_gpu: 12
+    num_worker_per_gpu: 3
+    batch_size_per_gpu: 8
     dataset_enlarge_ratio: 1
     prefetch_mode: ~
 
   # Uncomment these for validation
-  val:
-    name: validation
-    type: PairedImageDataset
-    dataroot_gt: FFHQ_wild_human_cuts/val/hq
-    dataroot_lq: FFHQ_wild_human_cuts/val/lq
-    io_backend:
-      type: disk
+  # val:
+  #   name: validation
+  #   type: PairedImageDataset
+  #   dataroot_gt: FFHQ_wild_human_cuts/val/hq
+  #   dataroot_lq: FFHQ_wild_human_cuts/val/lq
+  #   io_backend:
+  #     type: disk
 
 # network structures
 network_g:
@@ -100,15 +100,15 @@ network_d:
 # path
 path:
   # use the pre-trained Real-ESRNet model
-  pretrain_network_g: drive/MyDrive/gradient/real_esrgan_pretrained_models/RealESRNet_x4plus.pth
+  pretrain_network_g: experiments/pretrained_models/RealESRGAN_x4plus.pth
   param_key_g: params_ema
   strict_load_g: true
-  pretrain_network_d: drive/MyDrive/gradient/real_esrgan_pretrained_models/RealESRGAN_x4plus_netD.pth
+  pretrain_network_d: experiments/pretrained_models/RealESRGAN_x4plus_netD.pth
   param_key_d: params
   strict_load_d: true
   resume_state: ~
   visualisation: visualisation
-  models: drive/MyDrive/gradient/models
+  models: ../drive/MyDrive/gradient/models
 
 # training settings
 train:
@@ -166,25 +166,25 @@ train:
 
 # Uncomment these for validation
 # validation settings
-val:
-  val_freq: !!float 5e3
-  save_img: True
+# val:
+#   val_freq: !!float 5e3
+#   save_img: True
 
-  metrics:
-    psnr: # metric name, can be arbitrary
-      type: calculate_psnr
-      crop_border: 4
-      test_y_channel: false
+#   metrics:
+#     psnr: # metric name, can be arbitrary
+#       type: calculate_psnr
+#       crop_border: 4
+#       test_y_channel: false
 
-    ssim: # metric name, can be arbitrary
-      type: calculate_ssim
-      crop_border: 4
-      test_y_channel: false
+#     ssim: # metric name, can be arbitrary
+#       type: calculate_ssim
+#       crop_border: 4
+#       test_y_channel: false
 
 # logging settings
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 5e3
+  save_checkpoint_freq: !!float 1e3
   use_tb_logger: true
   wandb:
     project: ~

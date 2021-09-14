@@ -121,8 +121,8 @@ def worker(path, opt):
             cropped_img = img[x:x + crop_size, y:y + crop_size, ...]
             cropped_img = np.ascontiguousarray(cropped_img)
             cv2.imwrite(
-                osp.join(opt['save_folder'], f'{img_name}_s{index:03d}{extension}'), cropped_img,
-                [cv2.IMWRITE_PNG_COMPRESSION, opt['compression_level']])
+                osp.join(opt['save_folder'], f'{img_name}_s{index:03d}{extension}'), cropped_img)
+                # , [cv2.IMWRITE_PNG_COMPRESSION, opt['compression_level']])
     process_info = f'Processing {img_name} ...'
     return process_info
 
