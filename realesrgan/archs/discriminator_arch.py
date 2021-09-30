@@ -29,32 +29,79 @@ class UNetDiscriminatorSN(nn.Module):
 
         self.conv9 = nn.Conv2d(num_feat, 1, 3, 1, 1)
 
-    def forward(self, x):
-        x0 = F.leaky_relu(self.conv0(x), negative_slope=0.2, inplace=True)
-        x1 = F.leaky_relu(self.conv1(x0), negative_slope=0.2, inplace=True)
-        x2 = F.leaky_relu(self.conv2(x1), negative_slope=0.2, inplace=True)
-        x3 = F.leaky_relu(self.conv3(x2), negative_slope=0.2, inplace=True)
+    def forward(self, x, layer_name_list=[]):
+        output = {}
+
+        x0 = self.conv0(x)
+        if 'conv0' in layer_name_list:
+            output['conv0'] = x0.clone()
+        x0 = F.leaky_relu(x0, negative_slope=0.2, inplace=True)
+
+        x1 = self.conv1(x0)
+        if 'conv1' in layer_name_list:
+            output['conv1'] = x1.clone()
+        x1 = F.leaky_relu(x1, negative_slope=0.2, inplace=True)
+
+        x2 = self.conv2(x1)
+        if 'conv2' in layer_name_list:
+            output['conv2'] = x2.clone()
+        x2 = F.leaky_relu(x2, negative_slope=0.2, inplace=True)
+
+        x3 = self.conv3(x2)
+        if 'conv3' in layer_name_list:
+            output['conv3'] = x3.clone()
+        x3 = F.leaky_relu(x3, negative_slope=0.2, inplace=True)
 
         # upsample
         x3 = F.interpolate(x3, scale_factor=2, mode='bilinear', align_corners=False)
-        x4 = F.leaky_relu(self.conv4(x3), negative_slope=0.2, inplace=True)
+
+        x4 = self.conv4(x3)
+        if 'conv4' in layer_name_list:
+            output['conv4'] = x4.clone()
+        x4 = F.leaky_relu(x4, negative_slope=0.2, inplace=True)
 
         if self.skip_connection:
             x4 = x4 + x2
+
         x4 = F.interpolate(x4, scale_factor=2, mode='bilinear', align_corners=False)
-        x5 = F.leaky_relu(self.conv5(x4), negative_slope=0.2, inplace=True)
+
+        x5 = self.conv5(x4)
+        if 'conv5' in layer_name_list:
+            output['conv5'] = x5.clone()
+        x5 = F.leaky_relu(x5, negative_slope=0.2, inplace=True)
 
         if self.skip_connection:
             x5 = x5 + x1
+
         x5 = F.interpolate(x5, scale_factor=2, mode='bilinear', align_corners=False)
-        x6 = F.leaky_relu(self.conv6(x5), negative_slope=0.2, inplace=True)
+
+        x6 = self.conv6(x5)
+        if 'conv6' in layer_name_list:
+            output['conv6'] = x6.clone()
+        x6 = F.leaky_relu(x6, negative_slope=0.2, inplace=True)
 
         if self.skip_connection:
             x6 = x6 + x0
 
         # extra
-        out = F.leaky_relu(self.conv7(x6), negative_slope=0.2, inplace=True)
-        out = F.leaky_relu(self.conv8(out), negative_slope=0.2, inplace=True)
-        out = self.conv9(out)
+        x7 = self.conv7(x6)
+        if 'conv7' in layer_name_list:
+            output['conv7'] = x7.clone()
+        x7 = F.leaky_relu(x7, negative_slope=0.2, inplace=True)
 
-        return out
+        x8 = self.conv8(x7)
+        if 'conv8' in layer_name_list:
+            output['conv8'] = x8.clone()
+        x8 = F.leaky_relu(x8, negative_slope=0.2, inplace=True)
+
+        x9 = self.conv9(x8)
+        if 'conv9' in layer_name_list:
+            output['conv9'] = x9.clone()
+
+        if len(output) == 0:
+            output = x9
+        else:
+            # Just alias interface
+            output['output'] = x9.clone()
+
+        return output

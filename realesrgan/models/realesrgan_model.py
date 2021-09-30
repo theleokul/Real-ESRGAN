@@ -12,6 +12,7 @@ from basicsr.utils import DiffJPEG, USMSharp
 from basicsr.utils.img_process_util import filter2D
 from basicsr.utils.registry import MODEL_REGISTRY
 from basicsr.metrics import calculate_metric
+from basicsr.losses import build_loss
 from collections import OrderedDict
 from torch.nn import functional as F
 from cleanfid import fid
@@ -26,6 +27,16 @@ class RealESRGANModel(SRGANModel):
         self.jpeger = DiffJPEG(differentiable=False).cuda()
         self.usm_sharpener = USMSharp().cuda()
         self.queue_size = opt.get('queue_size', 180)
+
+    def init_training_settings(self):
+        # NOTE: Overriding just to add GAN Feature Matching Loss
+        super(RealESRGANModel, self).init_training_settings()
+
+        train_opt = self.opt['train']
+        if train_opt.get('gfm_opt'):
+            self.cri_gfm = build_loss(train_opt['gfm_opt']).to(self.device)
+        else:
+            self.cri_gfm = None
 
     @torch.no_grad()
     def _dequeue_and_enqueue(self):
@@ -161,8 +172,13 @@ class RealESRGANModel(SRGANModel):
 
             # random crop
             gt_size = self.opt['gt_size']
-            (self.gt, self.gt_usm), self.lq = paired_random_crop([self.gt, self.gt_usm], self.lq, gt_size,
-                                                                 self.opt['scale'])
+            if data.get('mask_gt', None) is not None:
+                self.mask_gt = data['mask_gt'].to(self.device)[:, None]  # Add color channel as well
+                (self.gt, self.gt_usm, self.mask_gt), self.lq = paired_random_crop([self.gt, self.gt_usm, self.mask_gt], self.lq, gt_size,
+                                                                                    self.opt['scale'])
+            else:
+                (self.gt, self.gt_usm), self.lq = paired_random_crop([self.gt, self.gt_usm], self.lq, gt_size,
+                                                                      self.opt['scale'])
 
             # training pair pool
             self._dequeue_and_enqueue()
@@ -174,66 +190,13 @@ class RealESRGANModel(SRGANModel):
                 self.gt = data['gt'].to(self.device)
                 self.gt_usm = self.usm_sharpener(self.gt)
 
+            if data.get('mask_gt', None) is not None:
+                self.mask_gt = data['mask_gt'].to(self.device)[:, None]  # Add color channel as well
+
     def nondist_validation(self, dataloader, current_iter, tb_logger, save_img):
         # do not use the synthetic process during validation
         self.is_train = False
-
-        dataset_name = dataloader.dataset.opt['name']
-        with_metrics = self.opt['val'].get('metrics') is not None
-        if with_metrics:
-            self.metric_results = {metric: 0 for metric in self.opt['val']['metrics'].keys()}
-        pbar = tqdm(total=len(dataloader), unit='image')
-
-        for idx, val_data in enumerate(dataloader):
-            img_name = osp.splitext(osp.basename(val_data['lq_path'][0]))[0]
-            self.feed_data(val_data)
-            self.test()
-
-            visuals = self.get_current_visuals()
-            sr_img = tensor2img([visuals['result']])
-            if 'gt' in visuals:
-                gt_img = tensor2img([visuals['gt']])
-                del self.gt
-
-            # tentative for out of GPU memory
-            del self.lq
-            del self.output
-            torch.cuda.empty_cache()
-
-            if save_img:
-                if self.opt['is_train']:
-                    save_img_path = osp.join(self.opt['path']['visualization'], img_name,
-                                             f'{img_name}_{current_iter}.png')
-                else:
-                    if self.opt['val']['suffix']:
-                        save_img_path = osp.join(self.opt['path']['visualization'], dataset_name,
-                                                 f'{img_name}_{self.opt["val"]["suffix"]}.png')
-                    else:
-                        save_img_path = osp.join(self.opt['path']['visualization'], dataset_name,
-                                                 f'{img_name}_{self.opt["name"]}.png')
-                imwrite(sr_img, save_img_path)
-
-            if with_metrics:
-                # calculate metrics
-                for name, opt_ in self.opt['val']['metrics'].items():
-                    metric_data = dict(img1=sr_img, img2=gt_img)
-                    self.metric_results[name] += calculate_metric(metric_data, opt_)
-            pbar.update(1)
-            pbar.set_description(f'Test {img_name}')
-        pbar.close()
-
-        if with_metrics:
-            for metric in self.metric_results.keys():
-                self.metric_results[metric] /= (idx + 1)
-
-            # Calculate FID score
-            val_folder = osp.join(self.opt['path']['visualization'], dataset_name)
-            val_pred_folder = osp.join(self.opt['path']['visualization'], dataset_name)
-            fid_score = fid.compute_fid(val_pred_folder, val_folder)
-            self.metric_results['fid_score'] = fid_score
-
-            self._log_validation_metric_values(current_iter, dataset_name, tb_logger)
-
+        super(RealESRGANModel, self).nondist_validation(dataloader, current_iter, tb_logger, save_img)
         self.is_train = True
 
     def optimize_parameters(self, current_iter):
@@ -259,23 +222,51 @@ class RealESRGANModel(SRGANModel):
         if (current_iter % self.net_d_iters == 0 and current_iter > self.net_d_init_iters):
             # pixel loss
             if self.cri_pix:
-                l_g_pix = self.cri_pix(self.output, l1_gt)
+                if hasattr(self, 'mask_gt'):
+                    mask_gt = self.mask_gt
+                    l_g_pix = self.cri_pix(self.output * mask_gt, l1_gt * mask_gt)
+                else:
+                    raise Exception()
+                    l_g_pix = self.cri_pix(self.output, l1_gt)
+
                 l_g_total += l_g_pix
                 loss_dict['l_g_pix'] = l_g_pix
             # perceptual loss
             if self.cri_perceptual:
-                l_g_percep, l_g_style = self.cri_perceptual(self.output, percep_gt)
+                if hasattr(self, 'mask_gt'):
+                    mask_gt = self.mask_gt
+                    l_g_percep, l_g_style = self.cri_perceptual(self.output * mask_gt, percep_gt * mask_gt)
+                else:
+                    raise Exception()
+                    l_g_percep, l_g_style = self.cri_perceptual(self.output, percep_gt)
                 if l_g_percep is not None:
                     l_g_total += l_g_percep
                     loss_dict['l_g_percep'] = l_g_percep
                 if l_g_style is not None:
                     l_g_total += l_g_style
                     loss_dict['l_g_style'] = l_g_style
+
             # gan loss
-            fake_g_pred = self.net_d(self.output)
-            l_g_gan = self.cri_gan(fake_g_pred, True, is_disc=False)
+            gfm_layer_name_list = list(self.cri_gfm.layer_weights.keys()) if self.cri_gfm else []
+            fake_g_pred = self.net_d(
+                self.output
+                , layer_name_list=gfm_layer_name_list
+            )
+            l_g_gan = self.cri_gan(fake_g_pred['output'] if isinstance(fake_g_pred, dict) else fake_g_pred
+                                   , True
+                                   , is_disc=False)
             l_g_total += l_g_gan
             loss_dict['l_g_gan'] = l_g_gan
+
+            # gfm loss
+            if self.cri_gfm:
+                real_g_pred = self.net_d(
+                    gan_gt
+                    , layer_name_list=gfm_layer_name_list
+                )
+                l_g_gfm = self.cri_gfm(fake_g_pred, real_g_pred)
+                l_g_total += l_g_gfm
+                loss_dict['l_g_gfm'] = l_g_gfm
 
             l_g_total.backward()
             self.optimizer_g.step()
@@ -287,10 +278,13 @@ class RealESRGANModel(SRGANModel):
         self.optimizer_d.zero_grad()
         # real
         real_d_pred = self.net_d(gan_gt)
-        l_d_real = self.cri_gan(real_d_pred, True, is_disc=True)
+        l_d_real = self.cri_gan(real_d_pred['output'] if isinstance(real_d_pred, dict) else real_d_pred
+                                , True
+                                , is_disc=True)
         loss_dict['l_d_real'] = l_d_real
         loss_dict['out_d_real'] = torch.mean(real_d_pred.detach())
         l_d_real.backward()
+
         # fake
         fake_d_pred = self.net_d(self.output.detach().clone())  # clone for pt1.9
         l_d_fake = self.cri_gan(fake_d_pred, False, is_disc=True)

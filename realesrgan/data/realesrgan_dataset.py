@@ -11,6 +11,7 @@ from basicsr.data.transforms import augment
 from basicsr.utils import FileClient, get_root_logger, imfrombytes, img2tensor
 from basicsr.utils.registry import DATASET_REGISTRY
 from torch.utils import data as data
+# from loguru import logger
 
 
 @DATASET_REGISTRY.register()
@@ -38,6 +39,14 @@ class RealESRGANDataset(data.Dataset):
             with open(self.opt['meta_info']) as fin:
                 paths = [line.strip() for line in fin]
                 self.paths = [os.path.join(self.gt_folder, v) for v in paths]
+        self.paths = sorted(self.paths)
+
+        self.mask_paths = None
+        if opt.get('meta_mask_info', None) is not None:
+            with open(opt['meta_mask_info']) as fin:
+                paths = [line.strip() for line in fin]
+                self.mask_paths = [os.path.join(self.gt_folder, v) for v in paths]
+            self.mask_paths = sorted(self.mask_paths)
 
         # blur settings for the first degradation
         self.blur_kernel_size = opt['blur_kernel_size']
@@ -71,17 +80,26 @@ class RealESRGANDataset(data.Dataset):
         # -------------------------------- Load gt images -------------------------------- #
         # Shape: (h, w, c); channel order: BGR; image range: [0, 1], float32.
         gt_path = self.paths[index]
+        gt_mask_path = None
+        if self.mask_paths is not None:
+            gt_mask_path = self.mask_paths[index]
+
         # avoid errors caused by high latency in reading files
         retry = 3
+        mask_bytes = None
         while retry > 0:
             try:
                 img_bytes = self.file_client.get(gt_path, 'gt')
+                if gt_mask_path is not None:
+                    mask_bytes = self.file_client.get(gt_mask_path, 'gt_mask')
             except Exception as e:
                 logger = get_root_logger()
                 logger.warn(f'File client error: {e}, remaining retry times: {retry - 1}')
                 # change another file to read
                 index = random.randint(0, self.__len__())
                 gt_path = self.paths[index]
+                if self.mask_paths is not None:
+                    gt_mask_path = self.mask_paths[index]
                 time.sleep(1)  # sleep 1s for occasional server congestion
             else:
                 break
@@ -89,8 +107,19 @@ class RealESRGANDataset(data.Dataset):
                 retry -= 1
         img_gt = imfrombytes(img_bytes, float32=True)
 
+        mask_gt = None
+        if mask_bytes is not None:
+            mask_gt = imfrombytes(mask_bytes, float32=True)
+
         # -------------------- augmentation for training: flip, rotation -------------------- #
-        img_gt = augment(img_gt, self.opt['use_hflip'], self.opt['use_rot'])
+        if mask_gt is not None:
+            img_gt, mask_gt = augment([img_gt, mask_gt], self.opt['use_hflip'], self.opt['use_rot'])
+        else:
+            img_gt = augment(img_gt, self.opt['use_hflip'], self.opt['use_rot'])
+
+        if mask_gt is not None:
+            assert img_gt.shape == mask_gt.shape, 'Images and masks are not consistent.'
+            mask_gt = mask_gt[..., 0]  # Remove color channel as mask is binary
 
         # crop or pad to 400: 400 is hard-coded. You may change it accordingly
         h, w = img_gt.shape[0:2]
@@ -99,14 +128,40 @@ class RealESRGANDataset(data.Dataset):
         if h < crop_pad_size or w < crop_pad_size:
             pad_h = max(0, crop_pad_size - h)
             pad_w = max(0, crop_pad_size - w)
+
+            # NOTE: In that case we do not use mask as image is smaller than crop
             img_gt = cv2.copyMakeBorder(img_gt, 0, pad_h, 0, pad_w, cv2.BORDER_REFLECT_101)
+
         # crop
         if img_gt.shape[0] > crop_pad_size or img_gt.shape[1] > crop_pad_size:
             h, w = img_gt.shape[0:2]
-            # randomly choose top and left coordinates
-            top = random.randint(0, h - crop_pad_size)
-            left = random.randint(0, w - crop_pad_size)
+            if mask_gt is not None:
+                # Choose randomly center point based on mask
+                pos_centrs_y, pos_centrs_x = np.nonzero(mask_gt)
+                pos_centrs = np.stack([pos_centrs_y, pos_centrs_x], axis=1)
+
+                if pos_centrs.shape[0] > 0:
+                    centr = random.choice(pos_centrs)
+
+                    top = centr[0] - crop_pad_size // 2
+                    left = centr[1] - crop_pad_size // 2
+
+                    # Correct top, left in case when point is out of the borders
+                    top = np.min([top, h - crop_pad_size])  # Max range limit
+                    top = np.max([0, top])  # Min range limit
+                    left = np.min([left, w - crop_pad_size])  # Max range limit
+                    left = np.max([0, left])  # Min range limit
+                else:
+                    # randomly choose top and left coordinates
+                    top = random.randint(0, h - crop_pad_size)
+                    left = random.randint(0, w - crop_pad_size)
+            else:
+                # randomly choose top and left coordinates
+                top = random.randint(0, h - crop_pad_size)
+                left = random.randint(0, w - crop_pad_size)
+
             img_gt = img_gt[top:top + crop_pad_size, left:left + crop_pad_size, ...]
+            mask_gt = mask_gt[top:top + crop_pad_size, left:left + crop_pad_size, ...]
 
         # ------------------------ Generate kernels (used in the first degradation) ------------------------ #
         kernel_size = random.choice(self.kernel_range)
@@ -165,10 +220,24 @@ class RealESRGANDataset(data.Dataset):
 
         # BGR to RGB, HWC to CHW, numpy to tensor
         img_gt = img2tensor([img_gt], bgr2rgb=True, float32=True)[0]
+
+        if mask_gt is not None:
+            mask_gt = torch.tensor(mask_gt, dtype=img_gt.dtype)
+
         kernel = torch.FloatTensor(kernel)
         kernel2 = torch.FloatTensor(kernel2)
 
-        return_d = {'gt': img_gt, 'kernel1': kernel, 'kernel2': kernel2, 'sinc_kernel': sinc_kernel, 'gt_path': gt_path}
+        return_d = {
+            'gt': img_gt
+            , 'kernel1': kernel
+            , 'kernel2': kernel2
+            , 'sinc_kernel': sinc_kernel
+            , 'gt_path': gt_path
+        }
+
+        if mask_gt is not None:
+            return_d['mask_gt'] = mask_gt
+
         return return_d
 
     def __len__(self):

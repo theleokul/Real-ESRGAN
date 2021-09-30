@@ -1,5 +1,6 @@
 # general settings
-name: finetune_RealESRGANx4plus_400k
+name: finetune_wlapfilteringandmasks_meangfm_RealESRGANx4plus_400k_2000
+# name: finetune_test
 model_type: RealESRGANModel
 scale: 4
 num_gpu: auto
@@ -31,15 +32,16 @@ gray_noise_prob2: 0.4
 jpeg_range2: [30, 95]
 
 gt_size: 256
-queue_size: 128
+queue_size: 160
 
 # dataset and data loader settings
 datasets:
   train:
     name: FFHQHumanCuts
     type: RealESRGANDataset
-    dataroot_gt: FFHQ_wild_human_cuts
-    meta_info: train_meta_info.txt
+    dataroot_gt: /mnt/sdb1/datasets/FFHQ_wild_human_cuts
+    meta_info: /mnt/sdb1/datasets/FFHQ_wild_human_cuts/train_meta_info__lapvar_100.txt
+    meta_mask_info: /mnt/sdb1/datasets/FFHQ_wild_human_cuts/train_meta_mask_info__lapvar_100.txt
     io_backend:
       type: disk
 
@@ -73,13 +75,14 @@ datasets:
     prefetch_mode: ~
 
   # Uncomment these for validation
-  # val:
-  #   name: validation
-  #   type: PairedImageDataset
-  #   dataroot_gt: FFHQ_wild_human_cuts/val/hq
-  #   dataroot_lq: FFHQ_wild_human_cuts/val/lq
-  #   io_backend:
-  #     type: disk
+  val:
+    name: validation
+    type: RealESRGANPairedDataset
+    dataroot_gt: /mnt/sdb1/datasets/FFHQ_wild_human_cuts/val/hq
+    dataroot_lq: /mnt/sdb1/datasets/FFHQ_wild_human_cuts/val/lq
+    gt_size: 256
+    io_backend:
+      type: disk
 
 # network structures
 network_g:
@@ -100,15 +103,18 @@ network_d:
 # path
 path:
   # use the pre-trained Real-ESRNet model
-  pretrain_network_g: experiments/pretrained_models/RealESRGAN_x4plus.pth
+  # pretrain_network_g: experiments/pretrained_models/RealESRGAN_x4plus.pth
+  pretrain_network_g: experiments/finetune_wlapfilteringandmasks_meangfm_RealESRGANx4plus_400k/models/net_g_2000.pth
   param_key_g: params_ema
   strict_load_g: true
-  pretrain_network_d: experiments/pretrained_models/RealESRGAN_x4plus_netD.pth
+  # pretrain_network_d: experiments/pretrained_models/RealESRGAN_x4plus_netD.pth
+  pretrain_network_d: experiments/finetune_wlapfilteringandmasks_meangfm_RealESRGANx4plus_400k/models/net_d_2000.pth
   param_key_d: params
   strict_load_d: true
-  resume_state: ~
+  # resume_state: ~
+  resume_state: experiments/finetune_wlapfilteringandmasks_meangfm_RealESRGANx4plus_400k/training_states/2000.state
   visualisation: visualisation
-  models: ../drive/MyDrive/gradient/models
+  models: experiments/models
 
 # training settings
 train:
@@ -130,6 +136,7 @@ train:
     gamma: 0.5
 
   total_iter: 400000
+  # total_iter: 0
   warmup_iter: -1  # no warm up
 
   # losses
@@ -137,6 +144,7 @@ train:
     type: L1Loss
     loss_weight: 1.0
     reduction: mean
+
   # perceptual loss (content and style losses)
   perceptual_opt:
     type: PerceptualLoss
@@ -153,6 +161,25 @@ train:
     style_weight: 0
     range_norm: false
     criterion: l1
+
+  # GAN feature matching loss
+  gfm_opt:
+    type: GANFeatureMatchingLoss
+    layer_weights:
+      'conv0': 1
+      'conv1': 1
+      'conv2': 1
+      'conv3': 1
+      'conv4': 1
+      'conv5': 1
+      'conv6': 1
+      'conv7': 1
+      'conv8': 1
+      'conv9': 1
+    loss_weight: 1.0
+    criterion: 'l1'
+
+
   # gan loss
   gan_opt:
     type: GANLoss
@@ -166,29 +193,29 @@ train:
 
 # Uncomment these for validation
 # validation settings
-# val:
-#   val_freq: !!float 5e3
-#   save_img: True
+val:
+  val_freq: !!float 1e3
+  save_img: False
 
-#   metrics:
-#     psnr: # metric name, can be arbitrary
-#       type: calculate_psnr
-#       crop_border: 4
-#       test_y_channel: false
+  metrics:
+    psnr: # metric name, can be arbitrary
+      type: calculate_psnr
+      crop_border: 4
+      test_y_channel: false
 
-#     ssim: # metric name, can be arbitrary
-#       type: calculate_ssim
-#       crop_border: 4
-#       test_y_channel: false
+    ssim: # metric name, can be arbitrary
+      type: calculate_ssim
+      crop_border: 4
+      test_y_channel: false
 
 # logging settings
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 1e3
+  save_checkpoint_freq: !!float 2e3
   use_tb_logger: true
-  wandb:
-    project: ~
-    resume_id: ~
+  # wandb:
+  #   project: ~
+  #   resume_id: ~
 
 # dist training settings
 dist_params:
