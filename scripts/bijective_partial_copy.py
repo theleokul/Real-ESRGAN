@@ -2,22 +2,32 @@ import os
 import pathlib as pb
 from shutil import copyfile
 
+from tqdm import tqdm
 
-GT_HQ = 'D:\\datasets\\FFHQ_wild_human_cuts\\val\\lq'
-GEN_HQ = '../results_0'
-OUTPUT_GT = '../lq'
 
+HQ_ANCHOR = '/mnt/sdb1/datasets/FFHQ_wild_human_cuts/val_hq_lapvar_100_count_100'
+HQ = '/mnt/sdb1/datasets/FFHQ_wild_human_cuts/predict_val_lq_wlapfilterandmasks_20000_tile_512_tilepad_256'
+OUTPUT = '/mnt/sdb1/datasets/FFHQ_wild_human_cuts/predict_val_lq_wlapfilterandmasks_20000_tile_512_tilepad_256_count_16'
+LIM = 16
 
 
 def main():
-    preds = os.listdir(GEN_HQ)
+    anchors = os.listdir(HQ_ANCHOR)
 
-    os.makedirs(OUTPUT_GT, exist_ok=True)
+    os.makedirs(OUTPUT, exist_ok=True)
 
-    for pred in preds:
-        gt_name = pred[:-8] + '.png'
-        gt_src = os.path.join(GT_HQ, gt_name)
-        gt_dest = os.path.join(OUTPUT_GT, gt_name)
+    for i, anchor in tqdm(enumerate(anchors)):
+
+        if i >= LIM:
+            break
+
+        # -8 -- remove _out.png
+        # gt_name = pred[:-8] + '.png'
+        gt_name = anchor[:-4] + '_out.png'
+        # gt_name = anchor
+
+        gt_src = os.path.join(HQ, gt_name)
+        gt_dest = os.path.join(OUTPUT, gt_name)
 
         copyfile(gt_src, gt_dest)
 
