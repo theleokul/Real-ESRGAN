@@ -1,3 +1,3 @@
-from .losses import GANFeatureMatchingLoss
+from .losses import GANFeatureMatchingLoss, BCEWithLogitsLoss, PerceptualContextualLoss
 
-__all__ = ['GANFeatureMatchingLoss']
+__all__ = ['GANFeatureMatchingLoss', 'BCEWithLogitsLoss', 'PerceptualContextualLoss']
