@@ -56,7 +56,12 @@ def paired_center_crop(img_gts, img_lqs, gt_patch_size, scale, gt_path=None):
 
     # choose top and left coordinates for lq patch in the center
     top = (h_lq - lq_patch_size) // 2 - 1
+    if top < 0:
+        top = 0
+
     left = (w_lq - lq_patch_size) // 2 - 1
+    if left < 0:
+        left = 0
 
     # crop lq patch
     if input_type == 'Tensor':
