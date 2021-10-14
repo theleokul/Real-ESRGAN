@@ -3,12 +3,13 @@ import pathlib as pb
 from shutil import copyfile
 
 from tqdm import tqdm
+import numpy as np
 
 
 HQ_ANCHOR = '/mnt/sdb1/datasets/FFHQ_wild_human_cuts/val_hq_lapvar_100_count_100'
 HQ = '/mnt/sdb1/datasets/FFHQ_wild_human_cuts/predict_val_lq_wlapfilterandmasks_20000_tile_512_tilepad_256'
 OUTPUT = '/mnt/sdb1/datasets/FFHQ_wild_human_cuts/predict_val_lq_wlapfilterandmasks_20000_tile_512_tilepad_256_count_16'
-LIM = 16
+LIM = np.inf
 
 
 def main():

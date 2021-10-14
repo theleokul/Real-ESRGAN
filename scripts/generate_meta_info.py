@@ -49,8 +49,12 @@ if __name__ == '__main__':
     parser.add_argument('--check', action='store_true', help='Read image to check whether it is ok')
     args = parser.parse_args()
 
-    assert len(args.input) == len(args.root), ('Input folder and folder root should have the same length, but got '
-                                               f'{len(args.input)} and {len(args.root)}.')
+    # assert len(args.input) == len(args.root), ('Input folder and folder root should have the same length, but got '
+    #                                            f'{len(args.input)} and {len(args.root)}.')
+
+    if len(args.input) > 1 and len(args.root) == 1:
+        args.root = [args.root for _ in args.input]
+
     os.makedirs(os.path.dirname(args.meta_info), exist_ok=True)
 
     main(args)
