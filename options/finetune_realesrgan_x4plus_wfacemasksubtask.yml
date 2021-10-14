@@ -1,5 +1,5 @@
 # general settings
-name: finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k
+name: finetune_gfm+disinbottleneck+onlinefidis+2headdiswfacemasksubtask_RealESRGANx4plus_400k
 # name: finetune_test
 model_type: RealESRGANModel
 scale: 4
@@ -42,6 +42,7 @@ datasets:
     dataroot_gt: /mnt/sdb1/datasets/FFHQ_wild_human_cuts
     meta_info: /mnt/sdb1/datasets/FFHQ_wild_human_cuts/train_meta_info__lapvar_100.txt
     meta_mask_info: /mnt/sdb1/datasets/FFHQ_wild_human_cuts/train_meta_mask_info__lapvar_100.txt
+    meta_face_mask_info: /mnt/sdb1/datasets/FFHQ_wild_human_cuts/train_face_mask_meta_info__lapvar_100.txt
     io_backend:
       type: disk
 
@@ -69,7 +70,7 @@ datasets:
 
     # data loader
     use_shuffle: true
-    num_worker_per_gpu: 3
+    num_worker_per_gpu: 2
     batch_size_per_gpu: 8
     dataset_enlarge_ratio: 1
     prefetch_mode: ~
@@ -93,30 +94,29 @@ network_g:
   num_block: 23
   num_grow_ch: 32
 
-
 network_d:
-  type: UNetDiscriminatorSN
+  type: TwoHeadedUNetDiscriminatorSN
   num_in_ch: 3
   num_feat: 64
   skip_connection: True
   dis_in_bottleneck: True
+  two_head: True
+  is_face_mask_subtask_on: True
 
 # path
 path:
   # use the pre-trained Real-ESRNet model
   pretrain_network_g: experiments/pretrained_models/RealESRGAN_x4plus.pth
-  # pretrain_network_g: experiments/finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k/models/net_g_26000.pth
+  # pretrain_network_g: experiments/finetune_wlapfilteringandmasks_gfm_RealESRGANx4plus_400k/models/net_g_2000.pth
   param_key_g: params_ema
   strict_load_g: true
+  # pretrain_network_d: experiments/pretrained_models/RealESRGAN_x4plus_netD.pth
   pretrain_network_d: experiments/pretrained_models/RealESRGAN_x4plus_netD.pth
-  # pretrain_network_d: experiments/finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k/models/net_d_19000.pth
   param_key_d: params
   strict_load_d: false
   # resume_state: ~
-  # resume_state: experiments/finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k/training_states/19000.state
-  # visualization: /home/thele/dev/Real-ESRGAN/visualization  # Place where images on validation are saved
+  # resume_state: experiments/finetune_wlapfilteringandmasks_meangfm_RealESRGANx4plus_400k/training_states/2000.state
   models: experiments/models
-  # ignore_resume_networks: [network_g, network_d]
 
 # training settings
 train:
@@ -178,7 +178,7 @@ train:
       'conv7': 1
       'conv8': 1
       'conv9': 1
-    loss_weight: 1.0
+    loss_weight: !!float 1.0
     criterion: 'l1'
     apply_gram: False
 
@@ -189,6 +189,10 @@ train:
     real_label_val: 1.0
     fake_label_val: 0.0
     loss_weight: !!float 1e-1
+
+  fmss_opt:
+    type: BCEWithLogitsLoss
+    loss_weight: !!float 1.0
 
   net_d_iters: 1
   net_d_init_iters: 0

@@ -1,5 +1,5 @@
 # general settings
-name: finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k
+name: finetune_gfm+disinbottleneck+onlinefidis+contextual_RealESRGANx4plus_400k
 # name: finetune_test
 model_type: RealESRGANModel
 scale: 4
@@ -149,7 +149,7 @@ train:
 
   # perceptual loss (content and style losses)
   perceptual_opt:
-    type: PerceptualLoss
+    type: PerceptualContextualLoss
     layer_weights:
       # before relu
       'conv1_2': 0.1
@@ -160,6 +160,8 @@ train:
     vgg_type: vgg19
     use_input_norm: true
     perceptual_weight: !!float 1.0
+    contextual_weight: !!float 1.0
+    band_width: !!float 0.5
     style_weight: 0
     range_norm: false
     criterion: l1

@@ -1,6 +1,6 @@
 # general settings
-name: finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k
-# name: finetune_test
+# name: finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k_crop512
+name: finetune_test
 model_type: RealESRGANModel
 scale: 4
 num_gpu: auto
@@ -31,8 +31,8 @@ poisson_scale_range2: [0.05, 2.5]
 gray_noise_prob2: 0.4
 jpeg_range2: [30, 95]
 
-gt_size: 256
-queue_size: 160
+gt_size: 512
+queue_size: 80
 
 # dataset and data loader settings
 datasets:
@@ -63,14 +63,14 @@ datasets:
 
     final_sinc_prob: 0.8
 
-    gt_size: 256
+    gt_size: 512
     use_hflip: True
     use_rot: False
 
     # data loader
     use_shuffle: true
-    num_worker_per_gpu: 3
-    batch_size_per_gpu: 8
+    num_worker_per_gpu: 1
+    batch_size_per_gpu: 2
     dataset_enlarge_ratio: 1
     prefetch_mode: ~
 
@@ -104,19 +104,18 @@ network_d:
 # path
 path:
   # use the pre-trained Real-ESRNet model
-  pretrain_network_g: experiments/pretrained_models/RealESRGAN_x4plus.pth
-  # pretrain_network_g: experiments/finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k/models/net_g_26000.pth
+  # pretrain_network_g: experiments/pretrained_models/RealESRGAN_x4plus.pth
+  pretrain_network_g: experiments/finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k_crop512/models/net_g_2000.pth
   param_key_g: params_ema
   strict_load_g: true
   pretrain_network_d: experiments/pretrained_models/RealESRGAN_x4plus_netD.pth
-  # pretrain_network_d: experiments/finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k/models/net_d_19000.pth
+  # pretrain_network_d: experiments/finetune_wlapfilteringandmasks_meangfm_RealESRGANx4plus_400k/models/net_d_2000.pth
   param_key_d: params
   strict_load_d: false
   # resume_state: ~
-  # resume_state: experiments/finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k/training_states/19000.state
+  # resume_state: experiments/finetune_wlapfilteringandmasks_meangfm_RealESRGANx4plus_400k/training_states/2000.state
   # visualization: /home/thele/dev/Real-ESRGAN/visualization  # Place where images on validation are saved
   models: experiments/models
-  # ignore_resume_networks: [network_g, network_d]
 
 # training settings
 train:
@@ -134,11 +133,11 @@ train:
 
   scheduler:
     type: MultiStepLR
-    milestones: [26000, 50000, 75000, 100000]
+    milestones: [400000]
     gamma: 0.5
 
-  total_iter: 400000
-  # total_iter: 0
+  # total_iter: 400000
+  total_iter: 0
   warmup_iter: -1  # no warm up
 
   # losses
@@ -164,6 +163,10 @@ train:
     range_norm: false
     criterion: l1
 
+  # ffl_opt:
+  #   loss_weight: 1.
+  #   alpha: 1.
+
   # GAN feature matching loss
   gfm_opt:
     type: GANFeatureMatchingLoss
@@ -178,7 +181,7 @@ train:
       'conv7': 1
       'conv8': 1
       'conv9': 1
-    loss_weight: 1.0
+    loss_weight: 0.1
     criterion: 'l1'
     apply_gram: False
 
@@ -218,6 +221,8 @@ val:
     is:
       better: higher
 
+
+
 # logging settings
 logger:
   print_freq: 100
@@ -229,6 +234,6 @@ logger:
 
 # dist training settings
 dist_params:
-  backend: nccl
+  backend: gloo
   # timeout:
-  # port: 29500
+  # port: 29501

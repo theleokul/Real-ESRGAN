@@ -1,6 +1,6 @@
 # general settings
-name: finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k
-# name: finetune_test
+# name: finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k
+name: finetune_test
 model_type: RealESRGANModel
 scale: 4
 num_gpu: auto
@@ -104,8 +104,8 @@ network_d:
 # path
 path:
   # use the pre-trained Real-ESRNet model
-  pretrain_network_g: experiments/pretrained_models/RealESRGAN_x4plus.pth
-  # pretrain_network_g: experiments/finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k/models/net_g_26000.pth
+  # pretrain_network_g: experiments/pretrained_models/RealESRGAN_x4plus.pth
+  pretrain_network_g: /mnt/sdb1/experiment_results/real_esrgan_experiments_archived_20211006_121800/finetune_wlapfilteringandmasks_gfm+disinbottleneck_RealESRGANx4plus_400k/models/net_g_6000.pth
   param_key_g: params_ema
   strict_load_g: true
   pretrain_network_d: experiments/pretrained_models/RealESRGAN_x4plus_netD.pth
@@ -137,8 +137,8 @@ train:
     milestones: [26000, 50000, 75000, 100000]
     gamma: 0.5
 
-  total_iter: 400000
-  # total_iter: 0
+  # total_iter: 400000
+  total_iter: 0
   warmup_iter: -1  # no warm up
 
   # losses

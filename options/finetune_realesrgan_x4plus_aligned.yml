@@ -1,6 +1,6 @@
 # general settings
-name: finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k
-# name: finetune_test
+# name: finetune_ffhq_1024_70k_aligned_RealESRGANx4plus_400k
+name: finetune_test
 model_type: RealESRGANModel
 scale: 4
 num_gpu: auto
@@ -37,11 +37,10 @@ queue_size: 160
 # dataset and data loader settings
 datasets:
   train:
-    name: FFHQHumanCuts
+    name: FFHQ_1024_70k
     type: RealESRGANDataset
-    dataroot_gt: /mnt/sdb1/datasets/FFHQ_wild_human_cuts
-    meta_info: /mnt/sdb1/datasets/FFHQ_wild_human_cuts/train_meta_info__lapvar_100.txt
-    meta_mask_info: /mnt/sdb1/datasets/FFHQ_wild_human_cuts/train_meta_mask_info__lapvar_100.txt
+    dataroot_gt: /mnt/sdb1/datasets/FFHQ_1024_70k
+    meta_info: /mnt/sdb1/datasets/FFHQ_1024_70k/train_meta_info.txt
     io_backend:
       type: disk
 
@@ -76,10 +75,10 @@ datasets:
 
   # Uncomment these for validation
   val:
-    name: validation_finetune_gfm+disinbottleneck+onlinefid_RealESRGANx4plus_400k
+    name: validation
     type: RealESRGANPairedDataset
-    dataroot_gt: /mnt/sdb1/datasets/FFHQ_1024_70k/val/hq_usm_crop256_from_crop400lapvar50/face
-    dataroot_lq: /mnt/sdb1/datasets/FFHQ_1024_70k/val/lq_realesrgandegradation_crop64_from_crop400lapvar50
+    dataroot_gt: /mnt/sdb1/datasets/FFHQ_wild_human_cuts/val/hq
+    dataroot_lq: /mnt/sdb1/datasets/FFHQ_wild_human_cuts/val/lq
     gt_size: 256
     io_backend:
       type: disk
@@ -93,30 +92,28 @@ network_g:
   num_block: 23
   num_grow_ch: 32
 
-
 network_d:
   type: UNetDiscriminatorSN
   num_in_ch: 3
   num_feat: 64
   skip_connection: True
-  dis_in_bottleneck: True
+  # dis_in_bottleneck: True
 
 # path
 path:
   # use the pre-trained Real-ESRNet model
-  pretrain_network_g: experiments/pretrained_models/RealESRGAN_x4plus.pth
-  # pretrain_network_g: experiments/finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k/models/net_g_26000.pth
+  # pretrain_network_g: experiments/pretrained_models/RealESRGAN_x4plus.pth
+  pretrain_network_g: experiments/finetune_ffhq_1024_70k_aligned_RealESRGANx4plus_400k/models/net_g_26000.pth
   param_key_g: params_ema
   strict_load_g: true
   pretrain_network_d: experiments/pretrained_models/RealESRGAN_x4plus_netD.pth
-  # pretrain_network_d: experiments/finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k/models/net_d_19000.pth
+  # pretrain_network_d: experiments/finetune_wlapfilteringandmasks_meangfm_RealESRGANx4plus_400k/models/net_d_2000.pth
   param_key_d: params
   strict_load_d: false
   # resume_state: ~
-  # resume_state: experiments/finetune_gfm+disinbottleneck+onlinefidis_RealESRGANx4plus_400k/training_states/19000.state
-  # visualization: /home/thele/dev/Real-ESRGAN/visualization  # Place where images on validation are saved
+  # resume_state: experiments/finetune_wlapfilteringandmasks_meangfm_RealESRGANx4plus_400k/training_states/2000.state
+  visualisation: visualisation
   models: experiments/models
-  # ignore_resume_networks: [network_g, network_d]
 
 # training settings
 train:
@@ -134,11 +131,11 @@ train:
 
   scheduler:
     type: MultiStepLR
-    milestones: [26000, 50000, 75000, 100000]
+    milestones: [400000]
     gamma: 0.5
 
-  total_iter: 400000
-  # total_iter: 0
+  # total_iter: 400000
+  total_iter: 0
   warmup_iter: -1  # no warm up
 
   # losses
@@ -164,6 +161,10 @@ train:
     range_norm: false
     criterion: l1
 
+  # ffl_opt:
+  #   loss_weight: 1.
+  #   alpha: 1.
+
   # GAN feature matching loss
   gfm_opt:
     type: GANFeatureMatchingLoss
@@ -178,9 +179,9 @@ train:
       'conv7': 1
       'conv8': 1
       'conv9': 1
-    loss_weight: 1.0
+    loss_weight: 1.
     criterion: 'l1'
-    apply_gram: False
+    # apply_gram: True
 
   # gan loss
   gan_opt:
@@ -198,7 +199,6 @@ train:
 val:
   val_freq: !!float 1e3
   save_img: False
-  pbar: True
 
   metrics:
     psnr: # metric name, can be arbitrary
@@ -211,17 +211,10 @@ val:
       crop_border: 4
       test_y_channel: false
 
-    fid:
-      real_features: /mnt/sdb1/datasets/FFHQ_1024_70k/val/hq_usm_crop256_from_crop400lapvar50_features.npy
-      better: lower
-
-    is:
-      better: higher
-
 # logging settings
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 1e3
+  save_checkpoint_freq: !!float 2e3
   use_tb_logger: true
   # wandb:
   #   project: ~
@@ -230,5 +223,4 @@ logger:
 # dist training settings
 dist_params:
   backend: nccl
-  # timeout:
-  # port: 29500
+  port: 29500
