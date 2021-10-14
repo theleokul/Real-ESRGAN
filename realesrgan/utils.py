@@ -2,6 +2,7 @@ import cv2
 import math
 import numpy as np
 import os
+from time import perf_counter
 import torch
 from basicsr.archs.rrdbnet_arch import RRDBNet
 from torch.hub import download_url_to_file, get_dir
@@ -20,6 +21,7 @@ class RealESRGANer():
         self.pre_pad = pre_pad
         self.mod_scale = None
         self.half = half
+        self.elapsed_times = []
 
         # initialize model
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -69,6 +71,8 @@ class RealESRGANer():
     def tile_process(self):
         """Modified from: https://github.com/ata4/esrgan-launcher
         """
+        t0 = perf_counter()
+
         batch, channel, height, width = self.img.shape
         output_height = height * self.scale
         output_width = width * self.scale
@@ -128,6 +132,11 @@ class RealESRGANer():
                             output_start_x:output_end_x] = output_tile[:, :, output_start_y_tile:output_end_y_tile,
                                                                        output_start_x_tile:output_end_x_tile]
 
+        t1 = perf_counter()
+        dt = (t1 - t0) / (tiles_x * tiles_y)
+        # print(f'Elapsed time per tile {self.tile_size}: {dt}s')
+        return dt
+
     def post_process(self):
         # remove extra pad
         if self.mod_scale is not None:
@@ -167,7 +176,9 @@ class RealESRGANer():
         # ------------------- process image (without the alpha channel) ------------------- #
         self.pre_process(img)
         if self.tile_size > 0:
-            self.tile_process()
+            dt = self.tile_process()
+            self.elapsed_times.append(dt)
+            print('Timings (mean, std): ', np.mean(self.elapsed_times), np.std(self.elapsed_times))
         else:
             self.process()
         output_img = self.post_process()
@@ -177,11 +188,14 @@ class RealESRGANer():
             output_img = cv2.cvtColor(output_img, cv2.COLOR_BGR2GRAY)
 
         # ------------------- process the alpha channel if necessary ------------------- #
+
         if img_mode == 'RGBA':
             if alpha_upsampler == 'realesrgan':
                 self.pre_process(alpha)
                 if self.tile_size > 0:
-                    self.tile_process()
+                    dt = self.tile_process()
+                    self.elapsed_times.append(dt)
+                    print('Timings (mean, std): ', np.mean(self.elapsed_times), np.std(self.elapsed_times))
                 else:
                     self.process()
                 output_alpha = self.post_process()
